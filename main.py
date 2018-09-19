@@ -25,8 +25,8 @@ TRAIN_COUNT = 10000
 N_ACTION = 3
 GRANULARITY = "H1"
 SPREAD = 0.01
-LOAD_DATA_FX_FILE = "../Rnn/data_fx/USDJPY_H1_2018.csv"
-LOAD_DATA_FX_FILE_FORWARD = "../Rnn/data_fx/USDJPY_H1_2016.csv"
+LOAD_DATA_FX_FILE = "../Rnn/data_fx/USDJPY_H1.csv"
+LOAD_DATA_FX_FILE_FORWARD = "../Rnn/data_fx/USDJPY_H1_2015.csv"
 # OANDA
 #ACCOUNT_ID = "7291359"
 #ACCESS_TOKEN = "71ce71cc491ed6761f62c91529797a42-5f71bdfe7ea17c20a8b72a7a1f125707"
@@ -195,7 +195,7 @@ class MyCallback(Callback):
 		'''
 		
 		# とりあえず学習結果を毎回保存
-		template = '{output_path}/{episode_reward}_{episode}.hdf5'
+		template = '{output_path}/{episode}_{episode_reward}.hdf5'
 		newWeights = template.format(**variables)
 		self.model.save_weights(newWeights, overwrite=True)
 		
