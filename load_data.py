@@ -7,6 +7,8 @@ import oandapy
 ACCESS_TOKEN = "71ce71cc491ed6761f62c91529797a42-5f71bdfe7ea17c20a8b72a7a1f125707"
 #ACCESS_TOKEN = "e2d515e8591ad375131f73b4d00fa046-dbcc42f596456f1562792f3639259b7f"
 
+MEAN_STD = pandas.read_csv("const_mean_std.csv")
+
 class ShigureLoadData:
 	def __init__(self) :
 		self.oanda = oandapy.API(environment="live", access_token=ACCESS_TOKEN)
@@ -105,7 +107,14 @@ class ShigureLoadData:
 		# データを標準化
 		for column_name in target_columns:
 			df[column_name + "_before"] = df[column_name]
-			df[column_name] = preprocessing.scale(df[column_name])
+			#df[column_name] = preprocessing.scale(df[column_name])
+			#mean_std_target = MEAN_STD[MEAN_STD["column_name"] == column_name].reset_index(drop=True)
+			#print("column_name: " + column_name)
+			#mean = mean_std_target["mean"][0]
+			#print("mean: " + str(mean))
+			#std = mean_std_target["std"][0]
+			#print("std: " + str(std))
+			#df[column_name] = (df[column_name] - mean) / std
 		return df
 
 	def add_avg_column(self, df, avg_count) :
@@ -128,3 +137,8 @@ class ShigureLoadData:
 			xset = numpy.array(df[target_columns][i + 1 - look_back : i + 1])
 			dataX.append(xset)
 		return numpy.array(dataX)
+
+	def log(self, msg) :
+		f = open('log.txt','a')
+		f.write(str(msg) + '\n')
+		f.close()
