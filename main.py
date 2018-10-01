@@ -20,9 +20,9 @@ import timeit
 import warnings
 warnings.filterwarnings('ignore')
 
-LOOK_BACK = 40
+LOOK_BACK = 6
 TRAIN_COUNT = 10000
-N_ACTION = 3
+N_ACTION = 21
 GRANULARITY = "H1"
 SPREAD = 0.01
 LOAD_DATA_FX_FILE = "../Rnn/data_fx/train.csv"
@@ -36,20 +36,24 @@ ACCESS_TOKEN = "e2d515e8591ad375131f73b4d00fa046-dbcc42f596456f1562792f3639259b7
 def calc_observation(df, index, columns):
 	return numpy.array(df[columns][index + 1 - LOOK_BACK:index + 1])
 
-def calc_reward(action, df, index, columns, position):
+def calc_reward(action, df, index, columns, position, amount):
 	reward = 0.0
 	if position > 0.0 : # 買ポジション
 		reward = df["USD_JPY_closeBid"].iloc[index] - position
 	elif position < 0.0 : # 売ポジションを持っている場合
 		reward = -1.0 * position - df["USD_JPY_closeAsk"].iloc[index]
+	reward = reward * amount
 
 	position = 0.0
-	if action == 0:  # 買
+	amount = 0.0
+	if (action > 0.0) and (action <= 10.0) :  # 買
 		position = df["USD_JPY_closeAsk"].iloc[index]
-	elif action == 1:  # 売
+		amount = action * 0.1
+	elif (action > 10.0) and (action <= 20.0) :  # 売
 		position = df["USD_JPY_closeBid"][index] * -1.0
+		amount = (action - 10.0) * 0.1
 
-	return reward, position
+	return reward, position, amount
 
 def calc_reward_forward(action, df, index, columns, position):
 	reward = 0.0
@@ -88,9 +92,10 @@ class Game(gym.core.Env):
 		self.time = LOOK_BACK - 1
 		self.profit = 0
 		self.position = 0
+		self.amount = 0
 
 	def step(self, action):
-		reward, self.position = calc_reward(action, self.df, self.time, self.columns, self.position)
+		reward, self.position, self.amount = calc_reward(action, self.df, self.time, self.columns, self.position, self.amount)
 		
 		self.time += 1
 		self.profit += reward	   
@@ -105,6 +110,7 @@ class Game(gym.core.Env):
 		self.time = LOOK_BACK - 1
 		self.profit = 0
 		self.position = 0
+		self.amount = 0
 		return calc_observation(self.df, self.time, self.columns)
 
 	def render(self, mode):
@@ -457,13 +463,11 @@ class ShigureRl:
 
 	def model_rl(self, observation_space, target_columns, n_action):
 		item_count = LOOK_BACK * len(target_columns)
+		print("item_count:" + str(item_count))
 		model = Sequential()
 		model.add(Flatten(input_shape=(1, ) + observation_space.shape))
-		model.add(Dense(item_count))
 		model.add(Dropout(0.2))
-		model.add(Dense(item_count))
-		model.add(Dropout(0.2))
-		model.add(Dense(item_count))
+		model.add(Dense(n_action))
 		model.add(Dense(n_action, activation="softmax"))
 		self.model = model
 		return model
