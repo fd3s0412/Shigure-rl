@@ -34,36 +34,15 @@ class ShigureLoadData:
 		return df, target_columns
 
 	def load_data_fx(self, file, date_from=None) :
-		df = pandas.read_csv(file, encoding="SHIFT_JIS", sep = ",", dtype="object", header=None)
-		df = df.drop([0])
+		df = pandas.read_csv(file, encoding="SHIFT_JIS", sep = ",")
 		df = df.dropna()
 
-		columns = ["index", "close", "closeBid", "complete", "high", "highBid", "low", "lowBid", "open", "openBid", "time", "volume"]
-		df.columns = columns
-		df["date"] = pandas.to_datetime(df["time"])
-		df = df[["date", "open", "high", "low", "close", "volume"]]
+		df['date_time'] = pandas.to_datetime(df['time'], format='%Y-%m-%d %H:%M:%S')
+		df['time'] = df['date_time'].apply(lambda d: d.timestamp())
+		df = df.sort_values(by='date_time')
+		df = df.set_index("date_time", drop=True)
 
-		# 日付でソート
-		df['date'] = pandas.to_datetime(df['date'], format='%Y-%m-%d %H:%M:%S')
-		df = df.sort_values(by='date')
-		df = df.reset_index(drop=True)
-
-		# 数値列を数値化
-		target_columns = ["open", "high", "low", "close", "volume"]
-		df[target_columns] = df[target_columns].astype("float")
-
-		# 平均列を追加
-		df, add_column_name = self.add_avg_column(df, 12)
-		target_columns.append(add_column_name)
-		df, add_column_name = self.add_avg_column(df, 26)
-		target_columns.append(add_column_name)
-		df, add_column_name = self.add_avg_column(df, 52)
-		target_columns.append(add_column_name)
-		df = df.dropna()
-		df = df.reset_index(drop=True)
-
-		df = self.common(df, target_columns, date_from=date_from)
-
+		target_columns = df.columns.values
 		return df, target_columns
 
 	def load_data_oanda(self, date_from=None, look_back=10, granularity="M5") :
@@ -101,12 +80,12 @@ class ShigureLoadData:
 	def common(self, df, target_columns, date_from=None):
 		# 日付で対象データを絞り込み
 		if date_from != None :
-			df = df[df.date >= date_from]
+			df = df[df.date_time >= date_from]
 			df = df.reset_index(drop=True)
 
 		# データを標準化
-		for column_name in target_columns:
-			df[column_name + "_before"] = df[column_name]
+		#for column_name in target_columns:
+			#df[column_name + "_before"] = df[column_name]
 			#df[column_name] = preprocessing.scale(df[column_name])
 			#mean_std_target = MEAN_STD[MEAN_STD["column_name"] == column_name].reset_index(drop=True)
 			#print("column_name: " + column_name)

@@ -25,8 +25,8 @@ TRAIN_COUNT = 10000
 N_ACTION = 3
 GRANULARITY = "H1"
 SPREAD = 0.01
-LOAD_DATA_FX_FILE = "../Rnn/data_fx/USDJPY_H1.csv"
-LOAD_DATA_FX_FILE_FORWARD = "../Rnn/data_fx/USDJPY_H1_2015.csv"
+LOAD_DATA_FX_FILE = "../Rnn/data_fx/train.csv"
+LOAD_DATA_FX_FILE_FORWARD = "../Rnn/data_fx/forward.csv"
 # OANDA
 #ACCOUNT_ID = "7291359"
 #ACCESS_TOKEN = "71ce71cc491ed6761f62c91529797a42-5f71bdfe7ea17c20a8b72a7a1f125707"
@@ -39,15 +39,15 @@ def calc_observation(df, index, columns):
 def calc_reward(action, df, index, columns, position):
 	reward = 0.0
 	if position > 0.0 : # 買ポジション
-		reward = df["close_before"][index] - SPREAD - position
+		reward = df["USD_JPY_closeBid"].iloc[index] - position
 	elif position < 0.0 : # 売ポジションを持っている場合
-		reward = -1.0 * position - df["close_before"][index] + SPREAD
+		reward = -1.0 * position - df["USD_JPY_closeAsk"].iloc[index]
 
 	position = 0.0
 	if action == 0:  # 買
-		position = df["close_before"][index]
+		position = df["USD_JPY_closeAsk"].iloc[index]
 	elif action == 1:  # 売
-		position = df["close_before"][index] * -1.0
+		position = df["USD_JPY_closeBid"][index] * -1.0
 
 	return reward, position
 
@@ -55,21 +55,21 @@ def calc_reward_forward(action, df, index, columns, position):
 	reward = 0.0
 	if action == 0:  # 買
 		if position < 0.0 : # 売ポジションを持っている場合、決済する(売った時の金額 - 現在価格 = 決済額）
-			reward = -1.0 * position - df["close_before"][index]
+			reward = -1.0 * position - df["USD_JPY_closeAsk"].iloc[index]
 			position = 0.0
 		if position == 0.0 :
-			position = df["close_before"][index]
+			position = df["USD_JPY_closeAsk"].iloc[index]
 	elif action == 1:  # 売
 		if position > 0.0 : # 買ポジションを持っている場合、決済する(現在価格 - 買った金額 = 決済額）
-			reward = df["close_before"][index] - position
+			reward = df["USD_JPY_closeBid"].iloc[index] - position
 			position = 0.0
 		if position == 0.0 :
-			position = df["close_before"][index] * -1.0
+			position = df["USD_JPY_closeBid"].iloc[index] * -1.0
 	else:  # ポジションを持たない
 		if position < 0.0 : # 売ポジションを持っている場合、決済する(売った時の金額 - 現在価格 = 決済額）
-			reward = -1.0 * position - df["close_before"][index]
+			reward = -1.0 * position - df["USD_JPY_closeAsk"].iloc[index]
 		if position > 0.0 : # 買ポジションを持っている場合、決済する(現在価格 - 買った金額 = 決済額）
-			reward = df["close_before"][index] - position
+			reward = df["USD_JPY_closeBid"].iloc[index] - position
 		position = 0.0
 	return reward, position
 
