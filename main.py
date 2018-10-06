@@ -12,6 +12,7 @@ from load_data import ShigureLoadData
 from threading import Thread
 import gym.spaces
 import json
+import math
 import numpy
 import os
 import pandas
@@ -20,11 +21,15 @@ import timeit
 import warnings
 warnings.filterwarnings('ignore')
 
-LOOK_BACK = 6
+LOOK_BACK = 40
+#target_model_update=5e-2
+#lr=1e-4
+TARGET_MODEL_UPDATE=5e-2
+LR=1e-4
+
 TRAIN_COUNT = 10000
-N_ACTION = 21
+N_ACTION = 21 # ポジションを持てる段階の数×2　+ 1
 GRANULARITY = "H1"
-SPREAD = 0.01
 LOAD_DATA_FX_FILE = "../Rnn/data_fx/train.csv"
 LOAD_DATA_FX_FILE_FORWARD = "../Rnn/data_fx/forward.csv"
 # OANDA
@@ -34,7 +39,11 @@ ACCOUNT_ID = "4062442"
 ACCESS_TOKEN = "e2d515e8591ad375131f73b4d00fa046-dbcc42f596456f1562792f3639259b7f"
 
 def calc_observation(df, index, columns):
-	return numpy.array(df[columns][index + 1 - LOOK_BACK:index + 1])
+	obs = numpy.array(df[columns][index + 1 - LOOK_BACK:index + 1])
+# 	if DEBUG :
+# 		print(obs)
+# 		DEBUG = False
+	return obs
 
 def calc_reward(action, df, index, columns, position, amount):
 	reward = 0.0
@@ -46,13 +55,14 @@ def calc_reward(action, df, index, columns, position, amount):
 
 	position = 0.0
 	amount = 0.0
-	if (action > 0.0) and (action <= 10.0) :  # 買
-		position = df["USD_JPY_closeAsk"].iloc[index]
-		amount = action * 0.1
-	elif (action > 10.0) and (action <= 20.0) :  # 売
-		position = df["USD_JPY_closeBid"][index] * -1.0
-		amount = (action - 10.0) * 0.1
+	if action > 0.0 :
+		amount = math.ceil(action / 2.0)
+		if action % 2 != 0 :  # 買
+			position = df["USD_JPY_closeAsk"].iloc[index]
+		else :  # 売
+			position = df["USD_JPY_closeBid"][index] * -1.0
 
+	print("index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
 	return reward, position, amount
 
 def calc_reward_forward(action, df, index, columns, position):
@@ -444,9 +454,9 @@ class ShigureRl:
 		print(get_now() + ": EpsGreedyQPolicy")
 		policy = EpsGreedyQPolicy(eps=0.1)
 		print(get_now() + ": DQNAgent")
-		agent = DQNAgent(model=model, nb_actions=N_ACTION, memory=memory, nb_steps_warmup=100, target_model_update=5e-2, policy=policy)
+		agent = DQNAgent(model=model, nb_actions=N_ACTION, memory=memory, nb_steps_warmup=100, target_model_update=TARGET_MODEL_UPDATE, policy=policy)
 		print(get_now() + ": compile")
-		agent.compile(Adam(lr=1e-4), metrics=['mae'])
+		agent.compile(Adam(lr=LR), metrics=['mae'])
 		return agent
 
 	def model_rl_old(self, observation_space, target_columns, n_action):
@@ -463,11 +473,14 @@ class ShigureRl:
 
 	def model_rl(self, observation_space, target_columns, n_action):
 		item_count = LOOK_BACK * len(target_columns)
+		dense_count = n_action
 		print("item_count:" + str(item_count))
 		model = Sequential()
 		model.add(Flatten(input_shape=(1, ) + observation_space.shape))
 		model.add(Dropout(0.2))
-		model.add(Dense(n_action))
+		model.add(Dense(dense_count))
+		model.add(Dropout(0.2))
+		model.add(Dense(dense_count))
 		model.add(Dense(n_action, activation="softmax"))
 		self.model = model
 		return model

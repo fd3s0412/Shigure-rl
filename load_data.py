@@ -41,6 +41,8 @@ class ShigureLoadData:
 		df['time'] = df['date_time'].apply(lambda d: d.timestamp())
 		df = df.sort_values(by='date_time')
 		df = df.set_index("date_time", drop=True)
+		if "Unnamed: 0" in df.columns :
+			df = df.drop(["Unnamed: 0"],axis=1)
 
 		target_columns = df.columns.values
 		return df, target_columns
