@@ -27,11 +27,13 @@ LOOK_BACK = 40
 TARGET_MODEL_UPDATE=5e-2
 LR=1e-4
 
+CONST_BEFORE = "_before"
+
 TRAIN_COUNT = 10000
 N_ACTION = 21 # ポジションを持てる段階の数×2　+ 1
 GRANULARITY = "H1"
-LOAD_DATA_FX_FILE = "../Rnn/data_fx/train.csv"
-LOAD_DATA_FX_FILE_FORWARD = "../Rnn/data_fx/forward.csv"
+LOAD_DATA_FX_FILE = "./datas/train.csv"
+LOAD_DATA_FX_FILE_FORWARD = "./datas/forward.csv"
 # OANDA
 #ACCOUNT_ID = "7291359"
 #ACCESS_TOKEN = "71ce71cc491ed6761f62c91529797a42-5f71bdfe7ea17c20a8b72a7a1f125707"
@@ -39,11 +41,10 @@ ACCOUNT_ID = "4062442"
 ACCESS_TOKEN = "e2d515e8591ad375131f73b4d00fa046-dbcc42f596456f1562792f3639259b7f"
 
 def calc_observation(df, index, columns):
-	obs = numpy.array(df[columns][index + 1 - LOOK_BACK:index + 1])
-# 	if DEBUG :
-# 		print(obs)
-# 		DEBUG = False
-	return obs
+	tmp = pandas.concat([df])
+	for column_name in columns:
+		tmp[column_name] = preprocessing.scale(tmp[column_name])
+	return numpy.array(tmp[columns][index + 1 - LOOK_BACK:index + 1])
 
 def calc_reward(action, df, index, columns, position, amount):
 	reward = 0.0

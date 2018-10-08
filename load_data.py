@@ -7,7 +7,8 @@ import oandapy
 ACCESS_TOKEN = "71ce71cc491ed6761f62c91529797a42-5f71bdfe7ea17c20a8b72a7a1f125707"
 #ACCESS_TOKEN = "e2d515e8591ad375131f73b4d00fa046-dbcc42f596456f1562792f3639259b7f"
 
-MEAN_STD = pandas.read_csv("const_mean_std.csv")
+#FILE_NAME_MEN_SDT = "const_mean_std.csv"
+#MEAN_STD = pandas.read_csv(FILE_NAME_MEN_SDT)
 
 class ShigureLoadData:
 	def __init__(self) :
@@ -43,7 +44,6 @@ class ShigureLoadData:
 		df = df.set_index("date_time", drop=True)
 		if "Unnamed: 0" in df.columns :
 			df = df.drop(["Unnamed: 0"],axis=1)
-
 		target_columns = df.columns.values
 		return df, target_columns
 
