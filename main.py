@@ -1,3 +1,4 @@
+warnings.filterwarnings('ignore')
 from datetime import datetime
 # from keras import regularizers
 from keras.callbacks import Callback
@@ -19,9 +20,8 @@ import pandas
 import time
 import timeit
 import warnings
-warnings.filterwarnings('ignore')
 
-LOOK_BACK = 40
+LOOK_BACK = 10
 #target_model_update=5e-2
 #lr=1e-4
 TARGET_MODEL_UPDATE=5e-2
