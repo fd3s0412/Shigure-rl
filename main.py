@@ -21,7 +21,9 @@ import time
 import timeit
 import warnings
 
-LOOK_BACK = 10
+LOOK_BACK = 40
+TARGET_COLUMNS = ["time","USD_JPY_closeAsk","USD_JPY_closeBid","USD_JPY_highAsk","USD_JPY_highBid","USD_JPY_lowAsk","USD_JPY_lowBid","USD_JPY_openAsk","USD_JPY_openBid","USD_JPY_volume"]
+TARGET_COLUMNS_FOR_TRAIN = TARGET_COLUMNS.extend(["USD_JPY_closeAsk_h4","USD_JPY_closeBid_h4","USD_JPY_highAsk_h4","USD_JPY_highBid_h4","USD_JPY_lowAsk_h4","USD_JPY_lowBid_h4","USD_JPY_openAsk_h4","USD_JPY_openBid_h4","USD_JPY_volume_h4"])
 #target_model_update=5e-2
 #lr=1e-4
 TARGET_MODEL_UPDATE=5e-2
@@ -41,10 +43,29 @@ ACCOUNT_ID = "4062442"
 ACCESS_TOKEN = "e2d515e8591ad375131f73b4d00fa046-dbcc42f596456f1562792f3639259b7f"
 
 def calc_observation(df, index, columns):
-	tmp = pandas.concat([df])
-	for column_name in columns:
+	# columnsを上書きする(暫定対応)
+	columns = TARGET_COLUMNS
+	tmp = df[columns][index + 1 - LOOK_BACK:index + 1]
+	tmp = tmp.reset_index(drop=True)
+	tmp = pandas.concat([tmp, create_hour_chart(4, df, index)], axis=1)
+
+	# 標準化
+	for column_name in TARGET_COLUMNS_FOR_TRAIN :
+		if column_name == "time" :
+			tmp[column_name] = tmp[column_name] % (3600 * 24)
 		tmp[column_name] = preprocessing.scale(tmp[column_name])
-	return numpy.array(tmp[columns][index + 1 - LOOK_BACK:index + 1])
+
+	tmp.to_csv("debug.csv")
+	return numpy.array(tmp[columns][0:LOOK_BACK])
+
+def create_hour_chart(target_hour, df, index) :
+	target_hour = 4
+	tmp = df[columns][index + 1 - LOOK_BACK * target_hour:index + 1]
+	tmp = tmp.reset_index(drop=True)
+	tmp["time"] = tmp["time"] % (3600 * target_hour)
+	g = tmp.groupby("time")
+	tmp[
+	return tmp
 
 def calc_reward(action, df, index, columns, position, amount):
 	reward = 0.0
@@ -63,7 +84,10 @@ def calc_reward(action, df, index, columns, position, amount):
 		else :  # 売
 			position = df["USD_JPY_closeBid"][index] * -1.0
 
-	print("index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
+	win_kbn = "○"
+	if reward < 0 :
+		win_kbn = "▲"
+	print(win_kbn + " index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
 	return reward, position, amount
 
 def calc_reward_forward(action, df, index, columns, position):
@@ -266,6 +290,8 @@ class ShigureRl:
 		folder = "./fx_rl"
 		os.makedirs(folder, exist_ok=True)
 		df, target_columns = self.sld.load_data_fx(file=LOAD_DATA_FX_FILE)
+		# columnsを上書きする(暫定対応)
+		target_columns = TARGET_COLUMNS_FOR_TRAIN
 		print(get_now() + ": Game")
 		env = Game(df, target_columns)
 		agent = self.get_rl_agent(df, target_columns, env=env)
