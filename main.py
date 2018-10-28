@@ -1,4 +1,3 @@
-warnings.filterwarnings('ignore')
 from datetime import datetime
 # from keras import regularizers
 from keras.callbacks import Callback
@@ -20,10 +19,15 @@ import pandas
 import time
 import timeit
 import warnings
+warnings.filterwarnings('ignore')
 
 LOOK_BACK = 40
+MAX_HOUR_CHART_NUM=12
 TARGET_COLUMNS = ["time","USD_JPY_closeAsk","USD_JPY_closeBid","USD_JPY_highAsk","USD_JPY_highBid","USD_JPY_lowAsk","USD_JPY_lowBid","USD_JPY_openAsk","USD_JPY_openBid","USD_JPY_volume"]
-TARGET_COLUMNS_FOR_TRAIN = TARGET_COLUMNS.extend(["USD_JPY_closeAsk_h4","USD_JPY_closeBid_h4","USD_JPY_highAsk_h4","USD_JPY_highBid_h4","USD_JPY_lowAsk_h4","USD_JPY_lowBid_h4","USD_JPY_openAsk_h4","USD_JPY_openBid_h4","USD_JPY_volume_h4"])
+TARGET_COLUMNS_FOR_TRAIN = ["time","USD_JPY_closeAsk","USD_JPY_closeBid","USD_JPY_highAsk","USD_JPY_highBid","USD_JPY_lowAsk","USD_JPY_lowBid","USD_JPY_openAsk","USD_JPY_openBid","USD_JPY_volume"
+						,"USD_JPY_closeAsk_h4","USD_JPY_closeBid_h4","USD_JPY_highAsk_h4","USD_JPY_highBid_h4","USD_JPY_lowAsk_h4","USD_JPY_lowBid_h4","USD_JPY_openAsk_h4","USD_JPY_openBid_h4","USD_JPY_volume_h4"
+						,"USD_JPY_closeAsk_h8","USD_JPY_closeBid_h8","USD_JPY_highAsk_h8","USD_JPY_highBid_h8","USD_JPY_lowAsk_h8","USD_JPY_lowBid_h8","USD_JPY_openAsk_h8","USD_JPY_openBid_h8","USD_JPY_volume_h8"
+						,"USD_JPY_closeAsk_h12","USD_JPY_closeBid_h12","USD_JPY_highAsk_h12","USD_JPY_highBid_h12","USD_JPY_lowAsk_h12","USD_JPY_lowBid_h12","USD_JPY_openAsk_h12","USD_JPY_openBid_h12","USD_JPY_volume_h12"]
 #target_model_update=5e-2
 #lr=1e-4
 TARGET_MODEL_UPDATE=5e-2
@@ -48,25 +52,38 @@ def calc_observation(df, index, columns):
 	tmp = df[columns][index + 1 - LOOK_BACK:index + 1]
 	tmp = tmp.reset_index(drop=True)
 	tmp = pandas.concat([tmp, create_hour_chart(4, df, index)], axis=1)
+	tmp = pandas.concat([tmp, create_hour_chart(8, df, index)], axis=1)
+	tmp = pandas.concat([tmp, create_hour_chart(MAX_HOUR_CHART_NUM, df, index)], axis=1)
+	#tmp.to_csv("debug.csv")
 
 	# 標準化
-	for column_name in TARGET_COLUMNS_FOR_TRAIN :
+	columns = tmp.columns
+	for column_name in columns :
 		if column_name == "time" :
 			tmp[column_name] = tmp[column_name] % (3600 * 24)
 		tmp[column_name] = preprocessing.scale(tmp[column_name])
 
-	tmp.to_csv("debug.csv")
 	return numpy.array(tmp[columns][0:LOOK_BACK])
 
 def create_hour_chart(target_hour, df, index) :
-	target_hour = 4
-	tmp = df[columns][index + 1 - LOOK_BACK * target_hour:index + 1]
+	tmp = df[TARGET_COLUMNS][index + 1 - LOOK_BACK * target_hour:index + 1]
 	tmp = tmp.reset_index(drop=True)
-	tmp["time"] = tmp["time"] % (3600 * target_hour)
-	g = tmp.groupby("time")
-	tmp[
-	return tmp
+	tmp = tmp.reset_index(drop=False)
+	tmp["index"] = tmp["index"] - (tmp["index"] % target_hour)
+	g = tmp.groupby("index")
+	result = pandas.DataFrame()
+	result["USD_JPY_closeAsk_h" + str(target_hour)] = tmp[~tmp["index"].duplicated(keep='last')].reset_index()["USD_JPY_closeAsk"]
+	result["USD_JPY_closeBid_h" + str(target_hour)] = tmp[~tmp["index"].duplicated(keep='last')].reset_index()["USD_JPY_closeBid"]
+	result["USD_JPY_highAsk_h" + str(target_hour)] = g.max().reset_index()["USD_JPY_highAsk"]
+	result["USD_JPY_highBid_h" + str(target_hour)] = g.max().reset_index()["USD_JPY_highBid"]
+	result["USD_JPY_lowAsk_h" + str(target_hour)] = g.min().reset_index()["USD_JPY_lowAsk"]
+	result["USD_JPY_lowBid_h" + str(target_hour)] = g.min().reset_index()["USD_JPY_lowBid"]
+	result["USD_JPY_openAsk_h" + str(target_hour)] = tmp[~tmp["index"].duplicated()].reset_index()["USD_JPY_openAsk"]
+	result["USD_JPY_openBid_h" + str(target_hour)] = tmp[~tmp["index"].duplicated()].reset_index()["USD_JPY_openBid"]
+	result["USD_JPY_volume_h" + str(target_hour)] = g.sum().reset_index()["USD_JPY_volume"]
+	return result
 
+sum_reward = 0
 def calc_reward(action, df, index, columns, position, amount):
 	reward = 0.0
 	if position > 0.0 : # 買ポジション
@@ -87,7 +104,9 @@ def calc_reward(action, df, index, columns, position, amount):
 	win_kbn = "○"
 	if reward < 0 :
 		win_kbn = "▲"
-	print(win_kbn + " index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
+	global sum_reward
+	sum_reward += reward
+	print(win_kbn + " sum_reward: " + str(sum_reward) + ", index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
 	return reward, position, amount
 
 def calc_reward_forward(action, df, index, columns, position):
@@ -118,13 +137,18 @@ def calc_reward_forward(action, df, index, columns, position):
 def get_now() :
 	return datetime.now().strftime("%Y%m%d_%H%M%S")
 
+def log(msg) :
+	f = open('log.txt','a')
+	f.write(msg + '\n')
+	f.close()
+
 class Game(gym.core.Env):
 	def __init__(self, df, columns):
 		self.df = df.reset_index(drop=True)
 		self.columns = columns
 		self.action_space = gym.spaces.Discrete(N_ACTION)
 		self.observation_space = gym.spaces.Box(0, 999, shape=(LOOK_BACK, len(columns)), dtype=numpy.float32)
-		self.time = LOOK_BACK - 1
+		self.time = LOOK_BACK * MAX_HOUR_CHART_NUM - 1 # TODO: 開始インデックス設定
 		self.profit = 0
 		self.position = 0
 		self.amount = 0
@@ -142,7 +166,7 @@ class Game(gym.core.Env):
 		return observation, reward, done, info
 
 	def reset(self):
-		self.time = LOOK_BACK - 1
+		self.time = LOOK_BACK * MAX_HOUR_CHART_NUM - 1 # TODO: 開始インデックス設定
 		self.profit = 0
 		self.position = 0
 		self.amount = 0
@@ -239,6 +263,7 @@ class MyCallback(Callback):
 		template = '{output_path}/{episode}_{episode_reward}.hdf5'
 		newWeights = template.format(**variables)
 		self.model.save_weights(newWeights, overwrite=True)
+		log(get_now() + ":\t" + newWeights)
 		
 		#tmp = ShigureRl("fx", weights_file=newWeights)
 		#action, rieki_goukei = tmp.forward()
@@ -318,7 +343,7 @@ class ShigureRl:
 		df = self.forward_rl(df, target_columns, self.agent)
 		df.to_csv("forward_fx_rl-" + weights + ".csv", sep=",")
 		print(get_now() + ": forward_fx_rl " + weights)
-		self.log(get_now() + ": forward_fx_rl " + weights + " " + str(df["date"][len(df)-1]) + " " + str(df["ruiseki"][len(df)-1]))
+		log(get_now() + ": forward_fx_rl " + weights + " " + str(df["date"][len(df)-1]) + " " + str(df["ruiseki"][len(df)-1]))
 
 	def forward_oanda_rl(self, weights="best_weight.hdf5"):
 		df, target_columns = self.sld.load_data_oanda(look_back=LOOK_BACK, granularity=GRANULARITY)
@@ -326,7 +351,7 @@ class ShigureRl:
 		df = self.forward_rl(df, target_columns, self.agent)
 		df.to_csv("forward_oanda_rl.csv", sep=",")
 		print(get_now() + ": forward_oanda_rl")
-		self.log(get_now() + ": forward_fx_rl " + weights + " " + str(df["date"][len(df)-1]) + " " + str(df["ruiseki"][len(df)-1]))
+		log(get_now() + ": forward_fx_rl " + weights + " " + str(df["date"][len(df)-1]) + " " + str(df["ruiseki"][len(df)-1]))
 
 	def forward_rl(self, df, target_columns, agent) :
 		position = 0.0
@@ -412,7 +437,7 @@ class ShigureRl:
 				shorizumi_flg = True
 				buy_sell_kbn = get_buy_sell_kbn()
 				print(get_now() + ": " + str(buy_sell_kbn))
-				self.log(get_now() + ": " + str(buy_sell_kbn))
+				log(get_now() + ": " + str(buy_sell_kbn))
 				if before_kbn != buy_sell_kbn :
 					before_kbn = buy_sell_kbn
 					if order_1 != None :
@@ -522,11 +547,6 @@ class ShigureRl:
 		model.add(Activation('linear'))
 		self.model = model
 		return model
-
-	def log(self, msg) :
-		f = open('log.txt','a')
-		f.write(msg + '\n')
-		f.close()
 
 def build_parser():
 	from argparse import ArgumentParser
