@@ -85,6 +85,29 @@ def create_hour_chart(target_hour, df, index) :
 
 sum_reward = 0
 def calc_reward(action, df, index, columns, position, amount):
+	# actionに応じたrewardを即時計算（翌日まで待たない）
+	reward = 0.0
+	position = 0.0
+	amount = 0.0
+	if action > 0.0 :
+		amount = math.ceil(action / 2.0)
+		if action % 2 != 0 :  # 買
+			position = df["USD_JPY_closeAsk"].iloc[index]
+			reward = df["USD_JPY_closeBid"].iloc[index + 1] - position
+		else :  # 売
+			position = df["USD_JPY_closeBid"][index] * -1.0
+			reward = -1.0 * position - df["USD_JPY_closeAsk"].iloc[index + 1]
+	reward = reward * amount
+
+	win_kbn = "○"
+	if reward < 0 :
+		win_kbn = "▲"
+	global sum_reward
+	sum_reward += reward
+	print(win_kbn + " sum_reward: " + str(sum_reward) + ", index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
+	return reward, position, amount
+
+def calc_reward_old(action, df, index, columns, position, amount):
 	reward = 0.0
 	if position > 0.0 : # 買ポジション
 		reward = df["USD_JPY_closeBid"].iloc[index] - position
@@ -158,7 +181,8 @@ class Game(gym.core.Env):
 		
 		self.time += 1
 		self.profit += reward	   
-		done = self.time >= (len(self.df) - 1)
+		#done = self.time >= (len(self.df) - 1)
+		done = self.time >= (len(self.df) - 2) # 最後のindexは翌日の結果が取れないため飛ばす
 		if done:
 			print("[Episode End]----------profit: {}".format(self.profit))
 		info = {}
@@ -461,6 +485,8 @@ class ShigureRl:
 	def get_buy_sell_kbn_rl(self) :
 		try:
 			df, target_columns = self.sld.load_data_oanda(look_back=LOOK_BACK, granularity=GRANULARITY)
+			# columnsを上書きする(暫定対応)
+			target_columns = TARGET_COLUMNS_FOR_TRAIN
 			print(get_now() + ": get_buy_sell_kbn_rl")
 			print (df.iloc[len(df)-1])
 			print(get_now() + ": load_weights")
