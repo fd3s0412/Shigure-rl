@@ -36,7 +36,7 @@ LR=1e-4
 CONST_BEFORE = "_before"
 
 TRAIN_COUNT = 10000
-N_ACTION = 21 # ポジションを持てる段階の数×2　+ 1
+N_ACTION = 21 # ポジションを持てる段階の数×2 + 1
 GRANULARITY = "H1"
 LOAD_DATA_FX_FILE = "./datas/train.csv"
 LOAD_DATA_FX_FILE_FORWARD = "./datas/forward.csv"
@@ -84,7 +84,7 @@ def create_hour_chart(target_hour, df, index) :
 	return result
 
 sum_reward = 0
-def calc_reward(action, df, index, columns, position, amount):
+def calc_reward(action, df, index, columns, position, amount, output_log=True):
 	# actionに応じたrewardを即時計算（翌日まで待たない）
 	reward = 0.0
 	position = 0.0
@@ -104,7 +104,8 @@ def calc_reward(action, df, index, columns, position, amount):
 		win_kbn = "▲"
 	global sum_reward
 	sum_reward += reward
-	print(win_kbn + " sum_reward: " + str(sum_reward) + ", index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
+	if output_log :
+		print(win_kbn + " sum_reward: " + str(sum_reward) + ", index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
 	return reward, position, amount
 
 def calc_reward_old(action, df, index, columns, position, amount):
@@ -160,8 +161,8 @@ def calc_reward_forward(action, df, index, columns, position):
 def get_now() :
 	return datetime.now().strftime("%Y%m%d_%H%M%S")
 
-def log(msg) :
-	f = open('log.txt','a')
+def log(msg, file="log.txt") :
+	f = open(file,'a')
 	f.write(msg + '\n')
 	f.close()
 
@@ -329,9 +330,10 @@ class ShigureRl:
 		self.sld = ShigureLoadData()
 
 		# トレードで使用するRLエージェントをコンストラクタで作っておく。毎回作ると重いため。
-		df, target_columns = self.sld.load_data_oanda(look_back=LOOK_BACK, granularity=GRANULARITY)
-		print(get_now() + ": get_buy_sell_kbn_rl")
-		print (df.iloc[len(df)-1])
+		df, target_columns = self.sld.load_data_oanda(load_count=LOOK_BACK * MAX_HOUR_CHART_NUM, granularity=GRANULARITY)
+		target_columns = TARGET_COLUMNS_FOR_TRAIN
+		obs = calc_observation(df, len(df)-1, target_columns)
+		df = pandas.DataFrame(data=obs, columns=target_columns)
 		print(get_now() + ": get_rl_agent")
 		self.agent = self.get_rl_agent(df, target_columns)
 
@@ -348,80 +350,31 @@ class ShigureRl:
 		callback = MyCallback(folder)
 		agent.fit(env, nb_steps=(len(df)-LOOK_BACK) * TRAIN_COUNT,visualize=False,verbose=2,callbacks=[callback])
 
-	def train_fx_rnn(self):
-		folder = "./fx_rnn"
-		os.makedirs(folder, exist_ok=True)
-		df, target_columns = self.sld.load_data_fx(file=LOAD_DATA_FX_FILE)
-		x, y = self.sld.convert_train_dataset(df, target_columns, LOOK_BACK)
-		xDf = pandas.DataFrame(x[0])
-		model = self.model_rnn((LOOK_BACK, len(target_columns)))
-		model.compile(loss='mse', optimizer='rmsprop')
-		callback = MyCallback(folder)
-		model.fit(x, y, epochs=TRAIN_COUNT, verbose=2)
-		model.save(folder + "/best_weight.hdf5")
-
-	def forward_fx_rl(self, df=None, target_columns=None, weights="best_weight.hdf5"):
-		if df is None :
-			df, target_columns = self.sld.load_data_fx(file= LOAD_DATA_FX_FILE_FORWARD)
-		self.agent.load_weights("./fx_rl/" + weights)
-		df = self.forward_rl(df, target_columns, self.agent)
-		df.to_csv("forward_fx_rl-" + weights + ".csv", sep=",")
-		print(get_now() + ": forward_fx_rl " + weights)
-		log(get_now() + ": forward_fx_rl " + weights + " " + str(df["date"][len(df)-1]) + " " + str(df["ruiseki"][len(df)-1]))
-
 	def forward_oanda_rl(self, weights="best_weight.hdf5"):
-		df, target_columns = self.sld.load_data_oanda(look_back=LOOK_BACK, granularity=GRANULARITY)
-		self.agent.load_weights("./fx_rl/" + weights)
-		df = self.forward_rl(df, target_columns, self.agent)
-		df.to_csv("forward_oanda_rl.csv", sep=",")
 		print(get_now() + ": forward_oanda_rl")
-		log(get_now() + ": forward_fx_rl " + weights + " " + str(df["date"][len(df)-1]) + " " + str(df["ruiseki"][len(df)-1]))
+		load_count = LOOK_BACK * MAX_HOUR_CHART_NUM + (24 * 30) # 直近約1か月分
+		df, target_columns = self.sld.load_data_oanda(load_count=load_count, granularity=GRANULARITY)
+		action_list, reward_list, reward_sum_list = self.get_action_list(df, target_columns, self.agent)
+		df["action"] = action_list
+		df["reward_list"] = reward_list
+		df["reward_sum_list"] = reward_sum_list
+		df.to_csv("forward_oanda_" + get_now() + ".csv", sep=",")
 
-	def forward_rl(self, df, target_columns, agent) :
-		position = 0.0
-		df['position'] = 0.0
-		df['reward'] = 0.0
-		df['ruiseki'] = 0.0
-		for i in range(LOOK_BACK-1, len(df)) :
+	def get_action_list(self, df, target_columns, agent) :
+		action_list = [None] * (LOOK_BACK * MAX_HOUR_CHART_NUM - 1)
+		reward_list = [0] * (LOOK_BACK * MAX_HOUR_CHART_NUM - 1)
+		for i in range(LOOK_BACK * MAX_HOUR_CHART_NUM -1, len(df)) :
 			obs = calc_observation(df, i, target_columns)
+			#self.agent.load_weights("fx_rl/best_weight.hdf5")
+			self.agent.load_weights("fx_rl/12_843.40600000003.hdf5")
 			action = agent.forward(obs)
-			reward, position = calc_reward_forward(action, df, i, target_columns, position)
-			df['position'][i] = position
-			df['reward'][i] = reward
-			df['ruiseki'][i] = df['reward'].sum()
-		return df
-
-	def forward_oanda_rnn(self):
-		df, target_columns = self.sld.load_data_oanda(look_back=LOOK_BACK)
-		x = self.sld.convert_predict_dataset(df, target_columns, LOOK_BACK)
-		model = load_model("./fx_rnn/best_weight.hdf5")
-		predict_list = model.predict(x)
-		df = df.drop(range(LOOK_BACK))
-		df = df.reset_index(drop=True)
-		df['future_price'] = predict_list
-		# 予測価格列を追加
-		closes = numpy.array(df[['close']].values.flatten().tolist(), dtype='float64')
-		mean = closes.mean()
-		std = closes.std()
-		df['future_price_before'] = df['future_price'] * std + mean
-		position = 0.0
-		df['position'] = 0.0
-		df['reward'] = 0.0
-		df['ruiseki'] = 0.0
-		for i in range(len(df)):
-			action = 2.0
-			now_price = df['close'][i]
-			future_price = df['future_price'][i]
-			if now_price < future_price :
-				action = 0.0
-			elif now_price > future_price :
-				action = 1.0
-			reward, position = calc_reward(action, df, i, target_columns, position)
-			df['position'][i] = position
-			df['reward'][i] = reward
-			df['ruiseki'][i] = df['reward'].sum()
-		df.to_csv("forward_oanda_rnn.csv", sep=",")
-		print("forward_oanda_rnn")
+			action_list.append(action)
+			if i == len(df)-1 : # 最終行はrewardの計算不可
+				reward_list.append(0)
+			else :
+				reward, position, amount = calc_reward(action, df, i, None, None, None)
+				reward_list.append(reward)
+		return action_list, reward_list, numpy.cumsum(reward_list)
 
 	def forward_weights(self) :
 		import glob
@@ -436,17 +389,15 @@ class ShigureRl:
 			self.forward_fx_rl(df=df, target_columns=target_columns, weights=weights)
 
 	def tradestart_rl(self) :
-		self.tradestart(ACCOUNT_ID, self.get_buy_sell_kbn_rl)
+		self.tradestart(ACCOUNT_ID)
 
-	def tradestart_rnn(self) :
-		self.tradestart(ACCOUNT_ID, self.get_buy_sell_kbn_rnn)
-
-	def tradestart(self, account_id, get_buy_sell_kbn, seccond=45) :
+	def tradestart(self, account_id) :
 		import oandapy
 		oanda = oandapy.API(environment="practice",access_token=ACCESS_TOKEN)
 		unixtime_before = 0
 		order_1 = None
 		before_kbn = None
+		before_amount = None
 		shorizumi_flg = False
 		while True :
 			unixtime = int(time.mktime(datetime.now().timetuple()))
@@ -455,15 +406,16 @@ class ShigureRl:
 			if unixtime - unixtime_before >= 30 :
 				shorizumi_flg = False
 
-			# 4分xx秒～4分50秒の間に実施
-			if (shorizumi_flg == False and second >= 60 * 59 + 55) :
+			target_minutes = 59 # 毎時59分55秒以降に処理実施
+			if (shorizumi_flg == False and second >= 60 * target_minutes + 50 and second <= 60 * (target_minutes + 1)) :
 				unixtime_before = unixtime
 				shorizumi_flg = True
-				buy_sell_kbn = get_buy_sell_kbn()
-				print(get_now() + ": " + str(buy_sell_kbn))
-				log(get_now() + ": " + str(buy_sell_kbn))
-				if before_kbn != buy_sell_kbn :
+				buy_sell_kbn, amount = self.get_buy_sell_kbn_rl()
+				print(get_now() + ": " + str(buy_sell_kbn) + ", amount: " + str(amount))
+				log(get_now() + ": " + str(buy_sell_kbn) + ", amount: " + str(amount), file="log_trade.txt")
+				if (before_kbn != buy_sell_kbn) or (before_amount != amount) :
 					before_kbn = buy_sell_kbn
+					before_amount = amount
 					if order_1 != None :
 						try:
 							close_pos = oanda.close_trade(account_id, order_1)
@@ -471,55 +423,45 @@ class ShigureRl:
 							print(get_now() + ": close_trade:")
 							print(close_pos)
 						except:
+							import traceback
+							traceback.print_exc()
 							print(get_now() + ": close_trade error: " + str(order_1))
 					if buy_sell_kbn != None :
 						try :
-							order_1 = oanda.create_order(account_id,instrument="USD_JPY",units=30000,side=buy_sell_kbn,type="market")
+							units = amount * 3000
+							order_1 = oanda.create_order(account_id,instrument="USD_JPY",units=units,side=buy_sell_kbn,type="market")
 							order_1 = order_1['tradeOpened']['id']
 							print(get_now() + " " + buy_sell_kbn + ": " + str(order_1))
 						except:
+							import traceback
+							traceback.print_exc()
 							print(get_now() + ": error: " + buy_sell_kbn)
 							before_kbn = None
 			time.sleep(1)
 
 	def get_buy_sell_kbn_rl(self) :
 		try:
-			df, target_columns = self.sld.load_data_oanda(look_back=LOOK_BACK, granularity=GRANULARITY)
-			# columnsを上書きする(暫定対応)
-			target_columns = TARGET_COLUMNS_FOR_TRAIN
 			print(get_now() + ": get_buy_sell_kbn_rl")
-			print (df.iloc[len(df)-1])
+			df, target_columns = self.sld.load_data_oanda(load_count=LOOK_BACK * MAX_HOUR_CHART_NUM, granularity=GRANULARITY)
 			print(get_now() + ": load_weights")
 			self.agent.load_weights("fx_rl/best_weight.hdf5")
 			print(get_now() + ": forward")
 			action = self.agent.forward(calc_observation(df, len(df)-1, target_columns))
-			if action == 0 :
-				return "buy"
-			elif action == 1 :
-				return "sell"
+			print(get_now() + ": action: " + str(action))
+			amount = 0.0
+			if action > 0.0 :
+				amount = math.ceil(action / 2.0)
+				if action % 2 != 0 :  # 買
+					return "buy", amount
+				else :  # 売
+					return "sell", amount
 			else :
-				return None
+				return None, None
 		except:
+			import traceback
+			traceback.print_exc()
 			print(get_now() + ": weights file not found.")
-			return None
-
-	def get_buy_sell_kbn_rnn(self) :
-		df, target_columns = self.sld.load_data_oanda(look_back=LOOK_BACK)
-		x = self.sld.convert_predict_dataset(df, target_columns, LOOK_BACK)
-		try:
-			model = load_model("fx_rnn/best_weight.hdf5")
-			predict_list = model.predict(x)
-			future_price = predict_list[len(predict_list)-1]
-			now_price = df["close"][len(df)-1]
-			if now_price < future_price :
-				return "buy"
-			elif now_price > future_price :
-				return "sell"
-			else :
-				return None
-		except:
-			print("weights file not found.")
-			return None
+			return None, None
 
 	def get_rl_agent(self, df, target_columns, env=None):
 		if env == None :
@@ -590,28 +532,10 @@ def main():
 
 	tmp = ShigureRl()
 	if op.mode == "train" :
-		if op.target == "fx" :
-			if op.model == "rl" :
-				tmp.train_fx_rl()
-			elif op.model == "rnn" :
-				tmp.train_fx_rnn()
+		tmp.train_fx_rl()
 	elif op.mode == "forward":
-		if op.target == "fx" :
-			if op.model == "rl" :
-				tmp.forward_fx_rl()
-			elif op.model == "rnn" :
-				tmp.forward_fx_rnn()
-		elif op.target == "fx_all" :
-			tmp.forward_weights()
-		elif op.target == "oanda" :
-			if op.model == "rl" :
-				tmp.forward_oanda_rl()
-			elif op.model == "rnn" :
-				tmp.forward_oanda_rnn()
+		tmp.forward_oanda_rl()
 	elif op.mode == "tradestart" :
-		if op.model == "rl" :
-			tmp.tradestart_rl()
-		elif op.model == "rnn" :
-			tmp.tradestart_rnn()
+		tmp.tradestart_rl()
 
 main()

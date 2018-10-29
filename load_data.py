@@ -47,36 +47,24 @@ class ShigureLoadData:
 		target_columns = df.columns.values
 		return df, target_columns
 
-	def load_data_oanda(self, date_from=None, look_back=10, granularity="M5") :
-		res_hist = self.oanda.get_history(instrument="USD_JPY", granularity=granularity, count=look_back + 20 + (52-1))
+	def load_data_oanda(self, date_from=None, load_count=10, granularity="M5") :
+		res_hist = self.oanda.get_history(instrument="USD_JPY", granularity=granularity, count=load_count)
 		df = pandas.DataFrame(res_hist['candles'])
+		print ("load_data_oanda:")
+		print (df.iloc[len(df)-1])
 
-		columns = ["close", "closeBid", "complete", "high", "highBid", "low", "lowBid", "open", "openBid", "time", "volume"]
+		df.to_csv("load_data_oanda.csv")
+		columns = ["USD_JPY_closeAsk", "USD_JPY_closeBid", "USD_JPY_complete", "USD_JPY_highAsk", "USD_JPY_highBid", "USD_JPY_lowAsk", "USD_JPY_lowBid", "USD_JPY_openAsk", "USD_JPY_openBid", "time", "USD_JPY_volume"]
 		df.columns = columns
-		df["date"] = pandas.to_datetime(df["time"])
-		df = df[["date", "open", "high", "low", "close", "volume"]]
+		df.to_csv("load_data_oanda_edit_columns.csv")
 
-		# 日付でソート
-		df['date'] = pandas.to_datetime(df['date'], format='%Y-%m-%d %H:%M:%S')
-		df = df.sort_values(by='date')
-		df = df.reset_index(drop=True)
-
-		# 数値列を数値化
-		target_columns = ["open", "high", "low", "close", "volume"]
-		df[target_columns] = df[target_columns].astype("float")
-
-		# 平均列を追加
-		df, add_column_name = self.add_avg_column(df, 12)
-		target_columns.append(add_column_name)
-		df, add_column_name = self.add_avg_column(df, 26)
-		target_columns.append(add_column_name)
-		df, add_column_name = self.add_avg_column(df, 52)
-		target_columns.append(add_column_name)
-		df = df.dropna()
-		df = df.reset_index(drop=True)
-
-		df = self.common(df, target_columns, date_from=date_from)
-
+		df['date_time'] = pandas.to_datetime(df['time'], format='%Y-%m-%d %H:%M:%S')
+		df['time'] = df['date_time'].apply(lambda d: d.timestamp())
+		df = df.sort_values(by='date_time')
+		df = df.set_index("date_time", drop=True)
+		if "Unnamed: 0" in df.columns :
+			df = df.drop(["Unnamed: 0"],axis=1)
+		target_columns = df.columns.values
 		return df, target_columns
 
 	def common(self, df, target_columns, date_from=None):
