@@ -83,8 +83,7 @@ def create_hour_chart(target_hour, df, index) :
 	result["USD_JPY_volume_h" + str(target_hour)] = g.sum().reset_index()["USD_JPY_volume"]
 	return result
 
-sum_reward = 0
-def calc_reward(action, df, index, columns, position, amount, output_log=True):
+def calc_reward(action, df, index, sum_reward, output_log=True):
 	# actionに応じたrewardを即時計算（翌日まで待たない）
 	reward = 0.0
 	position = 0.0
@@ -106,54 +105,7 @@ def calc_reward(action, df, index, columns, position, amount, output_log=True):
 	sum_reward += reward
 	if output_log :
 		print(win_kbn + " sum_reward: " + str(sum_reward) + ", index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
-	return reward, position, amount
-
-def calc_reward_old(action, df, index, columns, position, amount):
-	reward = 0.0
-	if position > 0.0 : # 買ポジション
-		reward = df["USD_JPY_closeBid"].iloc[index] - position
-	elif position < 0.0 : # 売ポジションを持っている場合
-		reward = -1.0 * position - df["USD_JPY_closeAsk"].iloc[index]
-	reward = reward * amount
-
-	position = 0.0
-	amount = 0.0
-	if action > 0.0 :
-		amount = math.ceil(action / 2.0)
-		if action % 2 != 0 :  # 買
-			position = df["USD_JPY_closeAsk"].iloc[index]
-		else :  # 売
-			position = df["USD_JPY_closeBid"][index] * -1.0
-
-	win_kbn = "○"
-	if reward < 0 :
-		win_kbn = "▲"
-	global sum_reward
-	sum_reward += reward
-	print(win_kbn + " sum_reward: " + str(sum_reward) + ", index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
-	return reward, position, amount
-
-def calc_reward_forward(action, df, index, columns, position):
-	reward = 0.0
-	if action == 0:  # 買
-		if position < 0.0 : # 売ポジションを持っている場合、決済する(売った時の金額 - 現在価格 = 決済額）
-			reward = -1.0 * position - df["USD_JPY_closeAsk"].iloc[index]
-			position = 0.0
-		if position == 0.0 :
-			position = df["USD_JPY_closeAsk"].iloc[index]
-	elif action == 1:  # 売
-		if position > 0.0 : # 買ポジションを持っている場合、決済する(現在価格 - 買った金額 = 決済額）
-			reward = df["USD_JPY_closeBid"].iloc[index] - position
-			position = 0.0
-		if position == 0.0 :
-			position = df["USD_JPY_closeBid"].iloc[index] * -1.0
-	else:  # ポジションを持たない
-		if position < 0.0 : # 売ポジションを持っている場合、決済する(売った時の金額 - 現在価格 = 決済額）
-			reward = -1.0 * position - df["USD_JPY_closeAsk"].iloc[index]
-		if position > 0.0 : # 買ポジションを持っている場合、決済する(現在価格 - 買った金額 = 決済額）
-			reward = df["USD_JPY_closeBid"].iloc[index] - position
-		position = 0.0
-	return reward, position
+	return reward, position, amount, sum_reward
 
 # ------------------------------------------------------------
 # 現在日時取得.
@@ -174,11 +126,10 @@ class Game(gym.core.Env):
 		self.observation_space = gym.spaces.Box(0, 999, shape=(LOOK_BACK, len(columns)), dtype=numpy.float32)
 		self.time = LOOK_BACK * MAX_HOUR_CHART_NUM - 1 # TODO: 開始インデックス設定
 		self.profit = 0
-		self.position = 0
-		self.amount = 0
+		self.sum_reward = 0.0
 
 	def step(self, action):
-		reward, self.position, self.amount = calc_reward(action, self.df, self.time, self.columns, self.position, self.amount)
+		reward, self.position, self.amount, self.sum_reward = calc_reward(action, self.df, self.time, self.sum_reward)
 		
 		self.time += 1
 		self.profit += reward	   
@@ -193,8 +144,7 @@ class Game(gym.core.Env):
 	def reset(self):
 		self.time = LOOK_BACK * MAX_HOUR_CHART_NUM - 1 # TODO: 開始インデックス設定
 		self.profit = 0
-		self.position = 0
-		self.amount = 0
+		self.sum_reward = 0.0
 		return calc_observation(self.df, self.time, self.columns)
 
 	def render(self, mode):
@@ -354,27 +304,28 @@ class ShigureRl:
 		print(get_now() + ": forward_oanda_rl")
 		load_count = LOOK_BACK * MAX_HOUR_CHART_NUM + (24 * 30) # 直近約1か月分
 		df, target_columns = self.sld.load_data_oanda(load_count=load_count, granularity=GRANULARITY)
-		action_list, reward_list, reward_sum_list = self.get_action_list(df, target_columns, self.agent)
+		action_list, reward_list, reward_sum_list, sum_reward = self.get_action_list(df, target_columns, self.agent, weights=weights)
 		df["action"] = action_list
 		df["reward_list"] = reward_list
 		df["reward_sum_list"] = reward_sum_list
 		df.to_csv("forward_oanda_" + get_now() + ".csv", sep=",")
+		return sum_reward
 
-	def get_action_list(self, df, target_columns, agent) :
+	def get_action_list(self, df, target_columns, agent, weights="best_weight.hdf5") :
 		action_list = [None] * (LOOK_BACK * MAX_HOUR_CHART_NUM - 1)
 		reward_list = [0] * (LOOK_BACK * MAX_HOUR_CHART_NUM - 1)
+		sum_reward = 0.0
 		for i in range(LOOK_BACK * MAX_HOUR_CHART_NUM -1, len(df)) :
 			obs = calc_observation(df, i, target_columns)
-			#self.agent.load_weights("fx_rl/best_weight.hdf5")
-			self.agent.load_weights("fx_rl/12_843.40600000003.hdf5")
+			self.agent.load_weights("fx_rl/" + weights)
 			action = agent.forward(obs)
 			action_list.append(action)
 			if i == len(df)-1 : # 最終行はrewardの計算不可
 				reward_list.append(0)
 			else :
-				reward, position, amount = calc_reward(action, df, i, None, None, None)
+				reward, position, amount, sum_reward = calc_reward(action, df, i, sum_reward)
 				reward_list.append(reward)
-		return action_list, reward_list, numpy.cumsum(reward_list)
+		return action_list, reward_list, numpy.cumsum(reward_list), sum_reward
 
 	def forward_weights(self) :
 		import glob
