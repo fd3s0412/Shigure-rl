@@ -448,9 +448,9 @@ class ShigureRl:
 		print("item_count:" + str(item_count))
 		model = Sequential()
 		model.add(Flatten(input_shape=(1, ) + observation_space.shape))
-		model.add(Dropout(0.2))
+		model.add(Dropout(0.5))
 		model.add(Dense(dense_count))
-		model.add(Dropout(0.2))
+		model.add(Dropout(0.5))
 		model.add(Dense(dense_count))
 		model.add(Dense(n_action, activation="softmax"))
 		self.model = model
