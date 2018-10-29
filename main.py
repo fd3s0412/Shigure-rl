@@ -239,24 +239,17 @@ class MyCallback(Callback):
 		newWeights = template.format(**variables)
 		self.model.save_weights(newWeights, overwrite=True)
 		log(get_now() + ":\t" + newWeights)
-		
-		#tmp = ShigureRl("fx", weights_file=newWeights)
-		#action, rieki_goukei = tmp.forward()
-		#print("fit rieki_goukei: " + str(numpy.sum(self.rewards[episode])))
-		#print("callback forward rieki_goukei: " + str(rieki_goukei))
-		#print("rieki_goukei_max: " + str(self.lastreward))
-		
-		if numpy.sum(self.rewards[episode]) > self.lastreward :
-		#if numpy.sum(self.rewards[episode]) > self.lastreward:
-			
+
+		last_forward = ShigureRl().forward(file=LOAD_DATA_FX_FILE_FORWARD, weights=newWeights)
+		print(get_now() + " last_forward: " + str(last_forward))
+		log(get_now() + " last_forward: " + str(last_forward))
+		if last_forward > self.lastreward :
+			self.lastreward = last_forward
 			previousWeights = "{}/best_weight.hdf5".format(self.output_path)
 			if os.path.exists(previousWeights): os.remove(previousWeights)
-			#self.lastreward = numpy.sum(self.rewards[episode])
-			self.lastreward = numpy.sum(self.rewards[episode])
 			print("The reward is higher than the best one, saving checkpoint weights")
 			newWeights = "{}/best_weight.hdf5".format(self.output_path)
 			self.model.save_weights(newWeights, overwrite=True)
-			
 		else:
 			print("The reward is lower than the best one, checkpoint weights not updated")
 
@@ -300,10 +293,15 @@ class ShigureRl:
 		callback = MyCallback(folder)
 		agent.fit(env, nb_steps=(len(df)-LOOK_BACK) * TRAIN_COUNT,visualize=False,verbose=2,callbacks=[callback])
 
-	def forward_oanda_rl(self, weights="best_weight.hdf5"):
-		print(get_now() + ": forward_oanda_rl")
-		load_count = LOOK_BACK * MAX_HOUR_CHART_NUM + (24 * 30) # 直近約1か月分
-		df, target_columns = self.sld.load_data_oanda(load_count=load_count, granularity=GRANULARITY)
+	def forward(self, file=None, weights="best_weight.hdf5"):
+		print(get_now() + ": forward")
+		df = None
+		target_columns = None
+		if file != None :
+			df, target_columns = self.sld.load_data_fx(file=file)
+		else : # ファイルが指定されていない場合はoandaからロード
+			load_count = LOOK_BACK * MAX_HOUR_CHART_NUM + (24 * 30) # 直近約1か月分
+			df, target_columns = self.sld.load_data_oanda(load_count=load_count, granularity=GRANULARITY)
 		action_list, reward_list, reward_sum_list, sum_reward = self.get_action_list(df, target_columns, self.agent, weights=weights)
 		df["action"] = action_list
 		df["reward_list"] = reward_list
@@ -485,7 +483,7 @@ def main():
 	if op.mode == "train" :
 		tmp.train_fx_rl()
 	elif op.mode == "forward":
-		tmp.forward_oanda_rl()
+		tmp.forward()
 	elif op.mode == "tradestart" :
 		tmp.tradestart_rl()
 
