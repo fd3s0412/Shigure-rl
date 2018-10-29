@@ -83,7 +83,7 @@ def create_hour_chart(target_hour, df, index) :
 	result["USD_JPY_volume_h" + str(target_hour)] = g.sum().reset_index()["USD_JPY_volume"]
 	return result
 
-def calc_reward(action, df, index, sum_reward, output_log=True):
+def calc_reward(action, df, index, sum_reward, is_print=True):
 	# actionに応じたrewardを即時計算（翌日まで待たない）
 	reward = 0.0
 	position = 0.0
@@ -101,9 +101,8 @@ def calc_reward(action, df, index, sum_reward, output_log=True):
 	win_kbn = "○"
 	if reward < 0 :
 		win_kbn = "▲"
-	global sum_reward
 	sum_reward += reward
-	if output_log :
+	if is_print :
 		print(win_kbn + " sum_reward: " + str(sum_reward) + ", index: " + str(index) + ", action:" + str(action) + ", reward:" + str(reward) + ", position:" + str(position) + ", amount:" + str(amount))
 	return reward, position, amount, sum_reward
 
@@ -293,7 +292,7 @@ class ShigureRl:
 		callback = MyCallback(folder)
 		agent.fit(env, nb_steps=(len(df)-LOOK_BACK) * TRAIN_COUNT,visualize=False,verbose=2,callbacks=[callback])
 
-	def forward(self, file=None, weights="best_weight.hdf5"):
+	def forward(self, file=None, weights="./fx_rl/best_weight.hdf5"):
 		print(get_now() + ": forward")
 		df = None
 		target_columns = None
@@ -306,22 +305,23 @@ class ShigureRl:
 		df["action"] = action_list
 		df["reward_list"] = reward_list
 		df["reward_sum_list"] = reward_sum_list
-		df.to_csv("forward_oanda_" + get_now() + ".csv", sep=",")
+		#df.to_csv("forward_oanda_" + get_now() + ".csv", sep=",")
+		log(get_now() + " forward: " + str(sum_reward) + ", file: " + str(file) + ", weights: " + weights)
 		return sum_reward
 
-	def get_action_list(self, df, target_columns, agent, weights="best_weight.hdf5") :
+	def get_action_list(self, df, target_columns, agent, weights=None) :
 		action_list = [None] * (LOOK_BACK * MAX_HOUR_CHART_NUM - 1)
 		reward_list = [0] * (LOOK_BACK * MAX_HOUR_CHART_NUM - 1)
 		sum_reward = 0.0
 		for i in range(LOOK_BACK * MAX_HOUR_CHART_NUM -1, len(df)) :
 			obs = calc_observation(df, i, target_columns)
-			self.agent.load_weights("fx_rl/" + weights)
+			self.agent.load_weights(weights)
 			action = agent.forward(obs)
 			action_list.append(action)
 			if i == len(df)-1 : # 最終行はrewardの計算不可
 				reward_list.append(0)
 			else :
-				reward, position, amount, sum_reward = calc_reward(action, df, i, sum_reward)
+				reward, position, amount, sum_reward = calc_reward(action, df, i, sum_reward, is_print=False)
 				reward_list.append(reward)
 		return action_list, reward_list, numpy.cumsum(reward_list), sum_reward
 
