@@ -239,11 +239,11 @@ class MyCallback(Callback):
 		self.model.save_weights(newWeights, overwrite=True)
 		log(get_now() + ":\t" + newWeights, file="log_train.txt")
 
-		last_forward=0.0
 		#last_forward = ShigureRl().forward(file=LOAD_DATA_FX_FILE_FORWARD, weights=newWeights)
+		last_forward = episode_steps
 		print(get_now() + " last_forward: " + str(last_forward))
 		log(get_now() + " last_forward: " + str(last_forward), file="log_train.txt")
-		if last_forward > self.lastreward :
+		if last_forward >= self.lastreward :
 			self.lastreward = last_forward
 			previousWeights = "{}/best_weight.hdf5".format(self.output_path)
 			if os.path.exists(previousWeights): os.remove(previousWeights)
@@ -289,7 +289,7 @@ class ShigureRl:
 		print(get_now() + ": Game")
 		env = Game(df, target_columns)
 		agent = self.get_rl_agent(df, target_columns, env=env)
-		agent.load_weights("fx_rl/11_-5.424999999999699.hdf5")
+		#agent.load_weights("fx_rl/11_-5.424999999999699.hdf5")
 		callback = MyCallback(folder)
 		agent.fit(env, nb_steps=(len(df)-LOOK_BACK) * TRAIN_COUNT,visualize=False,verbose=2,callbacks=[callback])
 
@@ -429,18 +429,6 @@ class ShigureRl:
 		agent.compile(Adam(lr=LR), metrics=['mae'])
 		return agent
 
-	def model_rl_old(self, observation_space, target_columns, n_action):
-		model = Sequential()
-		model.add(Reshape(observation_space.shape, input_shape=(1,) + observation_space.shape))
-		model.add(LSTM(observation_space.shape[0] * observation_space.shape[1], return_sequences=True))
-		model.add(Dropout(0.2))
-		model.add(LSTM(observation_space.shape[0] * observation_space.shape[1], return_sequences=False))
-		model.add(Dropout(0.2))
-		model.add(Dense(n_action))
-		model.add(Activation('softmax'))
-		self.model = model
-		return model
-
 	def model_rl(self, observation_space, target_columns, n_action):
 		item_count = LOOK_BACK * len(target_columns)
 		dense_count = n_action
@@ -448,21 +436,9 @@ class ShigureRl:
 		model = Sequential()
 		model.add(Flatten(input_shape=(1, ) + observation_space.shape))
 		model.add(Dropout(0.2))
-		model.add(Dense(dense_count))
+		model.add(Dense(item_count))
 		model.add(Dropout(0.2))
-		model.add(Dense(dense_count))
 		model.add(Dense(n_action, activation="softmax"))
-		self.model = model
-		return model
-
-	def model_rnn(self, input_shape):
-		model = Sequential()
-		model.add(LSTM(4, input_shape=input_shape, return_sequences=True))
-		model.add(Dropout(0.2))
-		model.add(LSTM(4, return_sequences=False))
-		model.add(Dropout(0.2))
-		model.add(Dense(output_dim=1))
-		model.add(Activation('linear'))
 		self.model = model
 		return model
 
