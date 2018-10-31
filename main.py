@@ -21,7 +21,7 @@ import timeit
 import warnings
 warnings.filterwarnings('ignore')
 
-LOOK_BACK = 40
+LOOK_BACK = 48
 MAX_HOUR_CHART_NUM=12
 TARGET_COLUMNS = ["time","USD_JPY_closeAsk","USD_JPY_closeBid","USD_JPY_highAsk","USD_JPY_highBid","USD_JPY_lowAsk","USD_JPY_lowBid","USD_JPY_openAsk","USD_JPY_openBid","USD_JPY_volume"]
 TARGET_COLUMNS_FOR_TRAIN = ["time","USD_JPY_closeAsk","USD_JPY_closeBid","USD_JPY_highAsk","USD_JPY_highBid","USD_JPY_lowAsk","USD_JPY_lowBid","USD_JPY_openAsk","USD_JPY_openBid","USD_JPY_volume"
@@ -133,7 +133,7 @@ class Game(gym.core.Env):
 		self.time += 1
 		self.profit += reward	   
 		#done = self.time >= (len(self.df) - 1)
-		done = self.time >= (len(self.df) - 2) # 最後のindexは翌日の結果が取れないため飛ばす
+		done = (self.time >= (len(self.df) - 2)) or (self.sum_reward <= -5.0) # 最後のindexは翌日の結果が取れないため飛ばす
 		if done:
 			print("[Episode End]----------profit: {}".format(self.profit))
 		info = {}
@@ -237,11 +237,12 @@ class MyCallback(Callback):
 		template = '{output_path}/{episode}_{episode_reward}.hdf5'
 		newWeights = template.format(**variables)
 		self.model.save_weights(newWeights, overwrite=True)
-		log(get_now() + ":\t" + newWeights)
+		log(get_now() + ":\t" + newWeights, file="log_train.txt")
 
-		last_forward = ShigureRl().forward(file=LOAD_DATA_FX_FILE_FORWARD, weights=newWeights)
+		last_forward=0.0
+		#last_forward = ShigureRl().forward(file=LOAD_DATA_FX_FILE_FORWARD, weights=newWeights)
 		print(get_now() + " last_forward: " + str(last_forward))
-		log(get_now() + " last_forward: " + str(last_forward))
+		log(get_now() + " last_forward: " + str(last_forward), file="log_train.txt")
 		if last_forward > self.lastreward :
 			self.lastreward = last_forward
 			previousWeights = "{}/best_weight.hdf5".format(self.output_path)
@@ -288,7 +289,7 @@ class ShigureRl:
 		print(get_now() + ": Game")
 		env = Game(df, target_columns)
 		agent = self.get_rl_agent(df, target_columns, env=env)
-		#agent.load_weights("fx_rl/-0.034999999999939746_382.hdf5")
+		agent.load_weights("fx_rl/11_-5.424999999999699.hdf5")
 		callback = MyCallback(folder)
 		agent.fit(env, nb_steps=(len(df)-LOOK_BACK) * TRAIN_COUNT,visualize=False,verbose=2,callbacks=[callback])
 
@@ -446,9 +447,9 @@ class ShigureRl:
 		print("item_count:" + str(item_count))
 		model = Sequential()
 		model.add(Flatten(input_shape=(1, ) + observation_space.shape))
-		model.add(Dropout(0.5))
+		model.add(Dropout(0.2))
 		model.add(Dense(dense_count))
-		model.add(Dropout(0.5))
+		model.add(Dropout(0.2))
 		model.add(Dense(dense_count))
 		model.add(Dense(n_action, activation="softmax"))
 		self.model = model
