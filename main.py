@@ -21,7 +21,7 @@ import timeit
 import warnings
 warnings.filterwarnings('ignore')
 
-LOOK_BACK = 40
+LOOK_BACK = 48
 MAX_HOUR_CHART_NUM=12
 TARGET_COLUMNS = ["time","USD_JPY_closeAsk","USD_JPY_closeBid","USD_JPY_highAsk","USD_JPY_highBid","USD_JPY_lowAsk","USD_JPY_lowBid","USD_JPY_openAsk","USD_JPY_openBid","USD_JPY_volume"]
 TARGET_COLUMNS_FOR_TRAIN = ["time","USD_JPY_closeAsk","USD_JPY_closeBid","USD_JPY_highAsk","USD_JPY_highBid","USD_JPY_lowAsk","USD_JPY_lowBid","USD_JPY_openAsk","USD_JPY_openBid","USD_JPY_volume"
@@ -288,7 +288,7 @@ class ShigureRl:
 		print(get_now() + ": Game")
 		env = Game(df, target_columns)
 		agent = self.get_rl_agent(df, target_columns, env=env)
-		#agent.load_weights("fx_rl/-0.034999999999939746_382.hdf5")
+		agent.load_weights("fx_rl/10_-485.41399999997975.hdf5")
 		callback = MyCallback(folder)
 		agent.fit(env, nb_steps=(len(df)-LOOK_BACK) * TRAIN_COUNT,visualize=False,verbose=2,callbacks=[callback])
 
